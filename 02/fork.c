@@ -1,5 +1,9 @@
 #include <stdlib.h>
 
+/**
+ * getpid and getppid return two different values
+ * https://stackoverflow.com/questions/15183427/getpid-and-getppid-return-two-different-values
+ */
 int main()
 {
     int id;
@@ -17,6 +21,9 @@ int main()
         printf("Parent : Parent’s PID: %d\n", getpid());
         printf("Parent : Child’s PID: %d\n", id);
     }
+
+    id = fork();
+    printf("id value before close : %d\n", id);
 
     return 0;
 }
