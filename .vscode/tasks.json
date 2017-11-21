@@ -1,0 +1,21 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "gcc",
+            "args": [
+                "-g", "{work}02/fork.cpp",
+                "-o", "out"
+
+            ]
+        },
+
+        {
+            "label": "run",
+            "type": "shell",
+            "command": "./out"
+        }
+    ]
+}

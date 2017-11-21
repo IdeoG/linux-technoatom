@@ -8,7 +8,7 @@ int main()
 {
     int id;
     id = fork();
-    printf("id value : %d\n", id);
+    printf("fork id value : %d\n", id);
     if (id == 0)
     {
         printf("Child : Hello I am the child process\n");
@@ -23,7 +23,7 @@ int main()
     }
 
     id = fork();
-    printf("id value before close : %d\n", id);
+    printf("fork id value before close : %d\n", id);
 
     return 0;
 }
