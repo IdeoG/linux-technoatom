@@ -1,7 +1,7 @@
 #include <stdio.h>
 
-int main()
-{
+
+int main() {
     system("echo \"Test\" > log.txt");
     return 0;
 }
