@@ -4,7 +4,9 @@
  * getpid and getppid return two different values
  * https://stackoverflow.com/questions/15183427/getpid-and-getppid-return-two-different-values
  */
-void is_parent(int id) {
+
+void is_parent(int id)
+{
     if (id == 0)
     {
         printf("Child : Hello I am the child process\n");
@@ -19,15 +21,16 @@ void is_parent(int id) {
     }
 }
 
-int main() {
+int main()
+{
     int id;
     id = fork();
     printf("fork id value : %d\n", id);
     is_parent(id);
-    
+
     id = fork();
     printf("fork id value : %d\n", id);
     is_parent(id);
-    
+
     return 0;
 }
