@@ -153,6 +153,9 @@ int main(int argc, char *argv[])
     int efd;
     struct epoll_event event;
     struct epoll_event *events;
+    int sfd_storage_counter = 0;
+    const int sfd_storage_max = 20;
+    int sfd_storage[sfd_storage_max] = {0};
 
     if (argc != 2)
     {
@@ -219,53 +222,61 @@ int main(int argc, char *argv[])
                  means one or more incoming connections. */
                 while (1)
                 {
-                    struct sockaddr in_addr;
-                    socklen_t in_len;
-                    int infd;
-                    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-
-                    in_len = sizeof in_addr;
-                    infd = accept(sfd, &in_addr, &in_len);
-                    if (infd == -1)
+                    if (sfd_storage_counter >= sfd_storage_max)
                     {
-                        if ((errno == EAGAIN) ||
-                            (errno == EWOULDBLOCK))
+                        struct sockaddr in_addr;
+                        socklen_t in_len;
+                        int infd;
+                        char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+
+                        in_len = sizeof in_addr;
+                        infd = accept(sfd, &in_addr, &in_len);
+                        if (infd == -1)
                         {
-                            /* We have processed all incoming
+                            if ((errno == EAGAIN) ||
+                                (errno == EWOULDBLOCK))
+                            {
+                                /* We have processed all incoming
                              connections. */
-                            break;
+                                break;
+                            }
+                            else
+                            {
+                                perror("accept");
+                                break;
+                            }
                         }
-                        else
+
+                        s = getnameinfo(&in_addr, in_len,
+                                        hbuf, sizeof hbuf,
+                                        sbuf, sizeof sbuf,
+                                        NI_NUMERICHOST | NI_NUMERICSERV);
+                        if (s == 0)
                         {
-                            perror("accept");
-                            break;
+                            printf("Accepted connection on descriptor %d "
+                                   "(host=%s, port=%s)\n",
+                                   infd, hbuf, sbuf);
                         }
-                    }
 
-                    s = getnameinfo(&in_addr, in_len,
-                                    hbuf, sizeof hbuf,
-                                    sbuf, sizeof sbuf,
-                                    NI_NUMERICHOST | NI_NUMERICSERV);
-                    if (s == 0)
-                    {
-                        printf("Accepted connection on descriptor %d "
-                               "(host=%s, port=%s)\n",
-                               infd, hbuf, sbuf);
-                    }
-
-                    /* Make the incoming socket non-blocking and add it to the
+                        /* Make the incoming socket non-blocking and add it to the
                      list of fds to monitor. */
-                    s = make_socket_non_blocking(infd);
-                    if (s == -1)
-                        abort();
+                        s = make_socket_non_blocking(infd);
+                        if (s == -1)
+                            abort();
 
-                    event.data.fd = infd;
-                    event.events = EPOLLIN | EPOLLET;
-                    s = epoll_ctl(efd, EPOLL_CTL_ADD, infd, &event);
-                    if (s == -1)
+                        event.data.fd = infd;
+                        event.events = EPOLLIN | EPOLLET;
+                        s = epoll_ctl(efd, EPOLL_CTL_ADD, infd, &event);
+                        if (s == -1)
+                        {
+                            perror("epoll_ctl");
+                            abort();
+                        }
+                        sfd_storage[sfd_storage_counter++] = infd;
+                    }
+                    else
                     {
-                        perror("epoll_ctl");
-                        abort();
+                        printf("Not enought memory for new fd");
                     }
                 }
                 continue;
@@ -312,13 +323,20 @@ int main(int argc, char *argv[])
                         abort();
                     }
 
-                    s = write(events[i].data.fd, buf, sizeof(buf));
-                    if (s == -1)
+                    /* Send msg back to client */
+                    int outfd = events[i].data.fd;
+
+                    for (int i = 0; i < sfd_storage_counter; i++)
                     {
-                        perror("write");
-                        break;
+                        if (sfd_storage[i] == outfd)
+                            continue;
+                        s = write(sfd_storage[i], buf, sizeof(buf));
+                        if (s == -1)
+                        {
+                            perror("write");
+                            break;
+                        }
                     }
-                    printf("Message sent.\n");
                 }
 
                 if (done)
@@ -329,6 +347,18 @@ int main(int argc, char *argv[])
                     /* Closing the descriptor will make epoll remove it
                      from the set of descriptors which are monitored. */
                     close(events[i].data.fd);
+                    for (int i = 0; i < sfd_storage_counter; i++)
+                    {
+                        if (events[i].data.fd == sfd_storage[i])
+                        {
+                            for (int j = i; j < sfd_storage_max - 1; j++)
+                            {
+                                sfd_storage[j] = sfd_storage[j + 1];
+                            }
+                            continue;
+                        }
+                    }
+                    sfd_storage_counter--;
                 }
             }
         }

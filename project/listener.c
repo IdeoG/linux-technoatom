@@ -34,6 +34,22 @@ int main(int argc, char *argv[])
     hints.ai_socktype = SOCK_STREAM; /* We want a TCP socket */
     hints.ai_flags = AI_PASSIVE;     /* All interfaces */
 
+    // efd = epoll_create1(0);
+    // if (efd == -1)
+    // {
+    //     perror("epoll_create");
+    //     abort();
+    // }
+
+    // event.data.fd = sfd;
+    // event.events = EPOLLOUT | EPOLLET;
+    // s = epoll_ctl(efd, EPOLL_CTL_ADD, sfd, &event);
+    // if (s == -1)
+    // {
+    //     perror("epoll_ctl");
+    //     abort();
+    // }
+
     s = getaddrinfo(argv[1], argv[2], &hints, &result);
     if (s != 0)
     {
@@ -71,29 +87,16 @@ int main(int argc, char *argv[])
 
     freeaddrinfo(result); /* No longer needed */
 
-    int n = 3;
-    for (j = 0; j < n; j++)
+    for (;;)
     {
-        char string_buf[20];
-
-        fgets(string_buf, 20, stdin);
-        len = strlen(string_buf) + 1;
-        /* +1 for terminating null byte */
-
-        if (len + 1 > BUF_SIZE)
+        nread = read(sfd, buf, BUF_SIZE);
+        if (nread == -1)
         {
-            fprintf(stderr,
-                    "Ignoring long message in argument %d\n", j);
-            continue;
-        }
-
-        if (write(sfd, string_buf, len) != len)
-        {
-            fprintf(stderr, "partial/failed write\n");
+            perror("read");
             exit(EXIT_FAILURE);
         }
-        printf("Message sent.\n");
-        }
+        printf("Received %ld bytes: %s\n", (long)nread, buf);
+    }
 
     if (close(sfd) == -1)
     {
