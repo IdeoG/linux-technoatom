@@ -1,7 +1,10 @@
 #include <stdlib.h>
 
 /**
- * getpid and getppid return two different values
+ * Стоит отметить, что форки по своей сущности неуправляемые создания
+ * доходит до того, что дочерний прцоесс и родитель перехватывают 
+ * друг у друга последовательные команды
+ * Поэтому было принято решение исопльзовать семафоры
  * https://stackoverflow.com/questions/15183427/getpid-and-getppid-return-two-different-values
  */
 

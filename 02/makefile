@@ -10,7 +10,7 @@ system:
 	./out_system.o
 
 sem:
-	./sem.o
+	./out_sem.o
 
 clean:
 	rm *.o
