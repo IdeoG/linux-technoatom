@@ -63,7 +63,30 @@
  */
 
 // https://banu.com/blog/2/how-to-use-epoll-a-complete-example-in-c/
-// TODO: Sent message back to clients
+
+/**
+ *
+ * TODO:
+ * 1. Добавить циклобуфер для каждого клиента, чтобы быть уверенным в отправке данных.
+ * 2. Для каждого клиента можно в контексте data_epol void *ptr, например указатель на struct циклобуфера
+ * 3. Аллоцировать память с помощью malloc для циклобуфера в struct?
+ * 4. Контекст (writable, id, buffer). Смогу правильно реализовать?
+ * 5. writable flag в 0, если буффер(4096) заполнен и нам нужно отправить данные, после 
+ * того мы сможем дальше принимать данные. Смогу разобраться?
+ * 6. Когда приходит epollout? 
+ * Нельзя было писать в сокет и вдруг можно писать!
+ * 7. Как реализовать epollout обработчик? 
+ * 8. Какой флаг выкатывается при закрытии сокета? Какую обработку повесить на этот неизвестный флаг?
+ * 9. Как логгировать все данные в файл?
+ * 10. Какой код лучше обернуть функциями? Send_all?
+ * 11. Как проверить, можем мы передать данные клиенту или нет?
+ * 12. Как написать клиента, который спит на 5 минут? Потеряются ли данные, которые к нему идут?
+ * 13. Что делает syslog? Куда его вставить?
+ * 14. Как посмотреть размер окна через TCP?
+ * 15. Как добавить мультиплексирование данных с помощью poll?
+ * 
+ *
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,6 +100,16 @@
 #include <errno.h>
 
 #define MAXEVENTS 64
+#define BUF_SIZE 1024
+
+struct client_content
+{
+    int is_writable;
+    int fd;
+    char ring[4096];
+    int ring_init;
+    int ring_end;
+};
 
 static int
 make_socket_non_blocking(int sfd)
@@ -155,6 +188,7 @@ int main(int argc, char *argv[])
     struct epoll_event *events;
     int sfd_storage_counter = 0;
     const int sfd_storage_max = 20;
+    struct client_content *clients_storage[sfd_storage_max];
     int sfd_storage[sfd_storage_max];
 
     if (argc != 2)
@@ -207,11 +241,9 @@ int main(int argc, char *argv[])
         {
             if ((events[i].events & EPOLLERR) ||
                 (events[i].events & EPOLLHUP))
-            // (!(events[i].events & EPOLLIN)) ||
-            // (!(events[i].events & EPOLLOUT)))
             {
-                /* An error has occured on this fd, or the socket is not
-                 ready for reading (why were we notified then?) */
+                /* Handle simple errors */
+
                 fprintf(stderr, "epoll error\n");
                 close(events[i].data.fd);
                 continue;
@@ -219,8 +251,8 @@ int main(int argc, char *argv[])
 
             else if (sfd == events[i].data.fd)
             {
-                /* We have a notification on the listening socket, which
-                 means one or more incoming connections. */
+                /* New user is pending to be processed */
+
                 if (sfd_storage_counter < sfd_storage_max)
                 {
                     while (1)
@@ -234,13 +266,8 @@ int main(int argc, char *argv[])
                         infd = accept(sfd, &in_addr, &in_len);
                         if (infd == -1)
                         {
-                            if ((errno == EAGAIN) ||
-                                (errno == EWOULDBLOCK))
-                            {
-                                /* We have processed all incoming
-                             connections. */
+                            if (errno == EAGAIN)
                                 break;
-                            }
                             else
                             {
                                 perror("accept");
@@ -259,57 +286,58 @@ int main(int argc, char *argv[])
                                    infd, hbuf, sbuf);
                         }
 
-                        /* Make the incoming socket non-blocking and add it to the
-                     list of fds to monitor. */
                         s = make_socket_non_blocking(infd);
                         if (s == -1)
                             abort();
 
-                        event.data.fd = infd;
-                        event.events = EPOLLIN | EPOLLET | EPOLLOUT;
+                        /* Create struct for new user */
+
+                        struct client_content *client;
+                        client = malloc(sizeof(struct client_content));
+
+                        client->fd = infd;
+                        client->is_writable = 1;
+                        client->ring_init = 0;
+                        client->ring_end = 0;
+
+                        event.data.ptr = client;
+                        event.events = EPOLLIN | EPOLLET | EPOLLOUT | EPOLLRDHUP;
                         s = epoll_ctl(efd, EPOLL_CTL_ADD, infd, &event);
                         if (s == -1)
                         {
                             perror("epoll_ctl");
                             abort();
                         }
+                        clients_storage[sfd_storage_counter] = client;
                         sfd_storage[sfd_storage_counter++] = infd;
                     }
                 }
                 else
                 {
                     printf("Not enought memory for new fd\n");
-                    for (int i = 0; i < sfd_storage_counter; i++)
+                    for (int j = 0; j < sfd_storage_counter; j++)
                     {
-                        printf("sfd_storage[%d]=%d\n", i, sfd_storage[i]);
+                        printf("sfd_storage[%d]=%d\n", j, sfd_storage[j]);
                     }
                 }
                 continue;
             }
-            else if ((events[i].events & EPOLLIN) || (events[i].events & EPOLLOUT))
+            else if (events[i].events & EPOLLIN)
             {
-                /* We have data on the fd waiting to be read. Read and
-                 display it. We must read whatever data is available
-                 completely, as we are running in edge-triggered mode
-                 and won't get a notification again for the same
-                 data. */
+                /* The data is pending to be processed */
+
                 int done = 0;
 
                 while (1)
                 {
                     ssize_t count;
-                    char buf[256] = {0};
+                    char buf[BUF_SIZE] = {0};
 
                     count = read(events[i].data.fd, buf, sizeof buf);
                     if (count == -1)
                     {
-                        /* If errno == EAGAIN, that means we have read all
-                         data. So go back to the main loop. */
-                        if (errno != EAGAIN)
-                        {
-                            perror("read");
-                            done = 1;
-                        }
+                        fprintf(stdout, "Can't read from socket. Probably socket has closed.\n");
+                        perror("read");
                         break;
                     }
                     else if (count == 0)
@@ -321,7 +349,7 @@ int main(int argc, char *argv[])
                     }
 
                     /* Write the buffer to standard output */
-                    s = write(1, buf, count);
+                    s = write(stdout, buf, count);
                     if (s == -1)
                     {
                         perror("write");
@@ -331,15 +359,50 @@ int main(int argc, char *argv[])
                     /* Send msg back to client */
                     int outfd = events[i].data.fd;
 
-                    for (int i = 0; i < sfd_storage_counter; i++)
+                    for (int k = 0; k < sfd_storage_counter; k++)
                     {
-                        if (sfd_storage[i] == outfd)
+                        if (sfd_storage[k] == outfd)
                             continue;
-                        s = write(sfd_storage[i], buf, sizeof(buf));
+
+                        /* Fill a ring buffer */
+
+                        int ring_init = (clients_storage)[i]->ring_init;
+                        int ring_end = (clients_storage)[i]->ring_end;
+                        for (int j = 0; j < count; j++)
+                        {
+                            if (clients_storage[k]->is_writable == 1)
+                            {
+                                if (j + ring_init > 4096)
+                                    clients_storage[k]->ring[ring_init - 4096] = buf[j];
+                                else
+                                    clients_storage[k]->ring[ring_init] = buf[j];
+                                if ((ring_init + 1) == ring_end)
+                                {
+                                    clients_storage[k]->is_writable = 0;
+                                    break;
+                                }
+
+                                ring_init++;
+                                clients_storage[k]->ring_init++;
+                            }
+                        }
+                        if (ring_init > 4096)
+                            clients_storage[k]->ring_init -= 4096;
+
+                        /* Write to socket */
+
+                        s = write(sfd_storage[k], buf, count);
                         if (s == -1)
                         {
                             perror("write");
                             break;
+                        }
+                        else
+                        {
+                            if ((clients_storage[k]->ring_end + s) >= 4096)
+                                clients_storage[k]->ring_end += s - 4096;
+                            else
+                                clients_storage[k]->ring_end += s;
                         }
                     }
                 }
@@ -359,11 +422,80 @@ int main(int argc, char *argv[])
                             for (int j = i; j < sfd_storage_max - 1; j++)
                             {
                                 sfd_storage[j] = sfd_storage[j + 1];
+                                clients_storage[j] = clients_storage[j + 1];
                             }
                             continue;
                         }
                     }
                     sfd_storage_counter--;
+                }
+            }
+            else if (events[i].events & EPOLLOUT)
+            {
+                /* The socket is ready to be written for lost data */
+
+                // find socket.. костыль и велосипед..
+                int j;
+                for (j = 0; j < sfd_storage_max; j++)
+                {
+                    if (clients_storage[j]->fd == events[i].data.fd)
+                        break;
+                    else
+                        exit(1);
+                }
+                int ring_init = clients_storage[j]->ring_init;
+                int ring_end = clients_storage[j]->ring_end;
+                if (ring_init < ring_end)
+                {
+                    int size = (4096 - ring_end) + ring_init;
+                    char w_buf[size];
+                    for (int k = 0; k < size; k++)
+                    {
+                        if ((ring_end + k) >= 4096)
+                            w_buf[k] = clients_storage[j]->ring[ring_end + k - 4096];
+                        else
+                            w_buf[k] = clients_storage[j]->ring[ring_end + k];
+                    }
+                    /* Write to socket */
+
+                    s = write(sfd_storage[j], w_buf, size);
+                    if (s == -1)
+                    {
+                        perror("write");
+                        break;
+                    }
+                    else
+                    {
+                        if ((clients_storage[j]->ring_end + s) >= 4096)
+                            clients_storage[j]->ring_end += s - 4096;
+                        else
+                            clients_storage[j]->ring_end += s;
+                    }
+                }
+                else
+                {
+                    int size = ring_init - ring_end;
+                    char w_buf[size];
+                    for (int k = 0; k < size; k++)
+                    {
+                        w_buf[k] = clients_storage[j]->ring[ring_end + k];
+                    }
+
+                    /* Write to socket */
+
+                    s = write(sfd_storage[j], w_buf, size);
+                    if (s == -1)
+                    {
+                        perror("write");
+                        break;
+                    }
+                    else
+                    {
+                        if ((clients_storage[j]->ring_end + s) >= 4096)
+                            clients_storage[j]->ring_end += s - 4096;
+                        else
+                            clients_storage[j]->ring_end += s;
+                    }
                 }
             }
         }
