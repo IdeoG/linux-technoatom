@@ -225,7 +225,6 @@ int main(int argc, char *argv[])
                 {
                     while (1)
                     {
-
                         struct sockaddr in_addr;
                         socklen_t in_len;
                         int infd;
@@ -287,7 +286,7 @@ int main(int argc, char *argv[])
                 }
                 continue;
             }
-            else
+            else if ((events[i].events & EPOLLIN) || (events[i].events & EPOLLOUT))
             {
                 /* We have data on the fd waiting to be read. Read and
                  display it. We must read whatever data is available
@@ -299,7 +298,7 @@ int main(int argc, char *argv[])
                 while (1)
                 {
                     ssize_t count;
-                    char buf[256];
+                    char buf[256] = {0};
 
                     count = read(events[i].data.fd, buf, sizeof buf);
                     if (count == -1)
