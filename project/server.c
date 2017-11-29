@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
     struct epoll_event *events;
     int sfd_storage_counter = 0;
     const int sfd_storage_max = 20;
-    int sfd_storage[sfd_storage_max] = {0};
+    int sfd_storage[sfd_storage_max];
 
     if (argc != 2)
     {
@@ -186,7 +186,7 @@ int main(int argc, char *argv[])
     }
 
     event.data.fd = sfd;
-    event.events = EPOLLIN | EPOLLET;
+    event.events = EPOLLIN | EPOLLET | EPOLLOUT;
     s = epoll_ctl(efd, EPOLL_CTL_ADD, sfd, &event);
     if (s == -1)
     {
@@ -206,8 +206,9 @@ int main(int argc, char *argv[])
         for (i = 0; i < n; i++)
         {
             if ((events[i].events & EPOLLERR) ||
-                (events[i].events & EPOLLHUP) ||
-                (!(events[i].events & EPOLLIN)))
+                (events[i].events & EPOLLHUP))
+            // (!(events[i].events & EPOLLIN)) ||
+            // (!(events[i].events & EPOLLOUT)))
             {
                 /* An error has occured on this fd, or the socket is not
                  ready for reading (why were we notified then?) */
@@ -220,10 +221,11 @@ int main(int argc, char *argv[])
             {
                 /* We have a notification on the listening socket, which
                  means one or more incoming connections. */
-                while (1)
+                if (sfd_storage_counter < sfd_storage_max)
                 {
-                    if (sfd_storage_counter >= sfd_storage_max)
+                    while (1)
                     {
+
                         struct sockaddr in_addr;
                         socklen_t in_len;
                         int infd;
@@ -265,7 +267,7 @@ int main(int argc, char *argv[])
                             abort();
 
                         event.data.fd = infd;
-                        event.events = EPOLLIN | EPOLLET;
+                        event.events = EPOLLIN | EPOLLET | EPOLLOUT;
                         s = epoll_ctl(efd, EPOLL_CTL_ADD, infd, &event);
                         if (s == -1)
                         {
@@ -274,9 +276,13 @@ int main(int argc, char *argv[])
                         }
                         sfd_storage[sfd_storage_counter++] = infd;
                     }
-                    else
+                }
+                else
+                {
+                    printf("Not enought memory for new fd\n");
+                    for (int i = 0; i < sfd_storage_counter; i++)
                     {
-                        printf("Not enought memory for new fd");
+                        printf("sfd_storage[%d]=%d\n", i, sfd_storage[i]);
                     }
                 }
                 continue;
