@@ -75,6 +75,7 @@
 #include <fcntl.h>
 #include <sys/epoll.h>
 #include <errno.h>
+#include <syslog.h>
 
 #define MAXEVENTS 64
 
@@ -151,6 +152,7 @@ int main(int argc, char *argv[])
 {
     int sfd, s;
     int efd;
+    int ffd;
     struct epoll_event event;
     struct epoll_event *events;
     int sfd_storage_counter = 0;
@@ -177,6 +179,8 @@ int main(int argc, char *argv[])
         perror("listen");
         abort();
     }
+
+    openlog("slog", LOG_PID | LOG_CONS, LOG_USER);
 
     efd = epoll_create1(0);
     if (efd == -1)
@@ -207,12 +211,11 @@ int main(int argc, char *argv[])
         {
             if ((events[i].events & EPOLLERR) ||
                 (events[i].events & EPOLLHUP))
-            // (!(events[i].events & EPOLLIN)) ||
-            // (!(events[i].events & EPOLLOUT)))
             {
                 /* An error has occured on this fd, or the socket is not
                  ready for reading (why were we notified then?) */
                 fprintf(stderr, "epoll error\n");
+                syslog(LOG_INFO, "epoll error\n");
                 close(events[i].data.fd);
                 continue;
             }
@@ -257,6 +260,9 @@ int main(int argc, char *argv[])
                             printf("Accepted connection on descriptor %d "
                                    "(host=%s, port=%s)\n",
                                    infd, hbuf, sbuf);
+                            syslog(LOG_INFO, "Accepted connection on descriptor %d "
+                                             "(host=%s, port=%s)\n",
+                                   infd, hbuf, sbuf);
                         }
 
                         /* Make the incoming socket non-blocking and add it to the
@@ -279,9 +285,11 @@ int main(int argc, char *argv[])
                 else
                 {
                     printf("Not enought memory for new fd\n");
+                    syslog("LOG_INFO", "Not enought memory for new user.\n");
                     for (int i = 0; i < sfd_storage_counter; i++)
                     {
                         printf("sfd_storage[%d]=%d\n", i, sfd_storage[i]);
+                        syslog("LOG_INFO", "sfd_storage[%d]=%d\n", i, sfd_storage[i]);
                     }
                 }
                 continue;
@@ -348,7 +356,8 @@ int main(int argc, char *argv[])
                 {
                     printf("Closed connection on descriptor %d\n",
                            events[i].data.fd);
-
+                    syslog("LOG_INFO", "Closed connection on descriptor %d\n",
+                           events[i].data.fd);
                     /* Closing the descriptor will make epoll remove it
                      from the set of descriptors which are monitored. */
                     close(events[i].data.fd);
@@ -368,6 +377,8 @@ int main(int argc, char *argv[])
             }
         }
     }
+
+    closelog();
 
     free(events);
 
