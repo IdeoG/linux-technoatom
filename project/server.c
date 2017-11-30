@@ -308,6 +308,7 @@ int main(int argc, char *argv[])
                             perror("epoll_ctl");
                             abort();
                         }
+                        printf("New user has added.\n");
                         clients_storage[sfd_storage_counter] = client;
                         sfd_storage[sfd_storage_counter++] = infd;
                     }
@@ -327,7 +328,8 @@ int main(int argc, char *argv[])
                 /* The data is pending to be processed */
 
                 int done = 0;
-
+                
+                printf("The data is pending to be processed\n");
                 while (1)
                 {
                     ssize_t count;
@@ -432,17 +434,24 @@ int main(int argc, char *argv[])
             }
             else if (events[i].events & EPOLLOUT)
             {
+                int invalid_fd = 0;
                 /* The socket is ready to be written for lost data */
-
+                fprintf(stdout, "The socket is ready to be written for lost data.\n");
                 // find socket.. костыль и велосипед..
                 int j;
-                for (j = 0; j < sfd_storage_max; j++)
+                for (j = 0; j < sfd_storage_counter; j++)
                 {
                     if (clients_storage[j]->fd == events[i].data.fd)
                         break;
                     else
-                        exit(1);
+                    {
+                        fprintf(stdout, "Invalid fd\n");
+                        fprintf(stdout, "event fd: %d, storage_event %d\n", events[i].data.fd, clients_storage[j]->fd);
+                        invalid_fd = 1;
+                    }
                 }
+                if (invalid_fd == 1)
+                    continue;
                 int ring_init = clients_storage[j]->ring_init;
                 int ring_end = clients_storage[j]->ring_end;
                 if (ring_init < ring_end)
