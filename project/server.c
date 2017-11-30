@@ -328,8 +328,8 @@ int main(int argc, char *argv[])
                 /* The data is pending to be processed */
 
                 int done = 0;
-                
-                printf("The data is pending to be processed\n");
+
+                printf("The data is pending to be processed. FD = %d\n", events[i].data.fd);
                 while (1)
                 {
                     ssize_t count;
@@ -452,6 +452,7 @@ int main(int argc, char *argv[])
                 }
                 if (invalid_fd == 1)
                     continue;
+                fprintf(stdout, "Continue procsrring EPOLLOUT");
                 int ring_init = clients_storage[j]->ring_init;
                 int ring_end = clients_storage[j]->ring_end;
                 if (ring_init < ring_end)
